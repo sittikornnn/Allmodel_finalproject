@@ -8,9 +8,17 @@ import torch
 from pythainlp.tokenize import word_tokenize
 from sentence_transformers import SentenceTransformer, util
 from datetime import datetime
+import os
+from pydub import AudioSegment
+from transformers import WhisperForConditionalGeneration, WhisperProcessor
+import librosa
+import base64
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
+
+UPLOAD_FOLDER = os.path.join(os.getcwd(), 'audio')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 id_user = 0
 
@@ -48,7 +56,7 @@ def get_data(selection_situ):
 def get_name_patient(selection_situ):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT fname_patient,lname_patient FROM situation s where s."ID_situ"=%s',(selection_situ,))
+    cursor.execute('SELECT fname_patient,lname_patient,name_situ,image FROM situation s where s."ID_situ"=%s',(selection_situ,))
     processing = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -168,7 +176,7 @@ def get_items():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute('SELECT "ID_situ", name_situ FROM situation')
+        cur.execute('SELECT "ID_situ", name_situ FROM situation ORDER BY "ID_situ" ASC')
         items = cur.fetchall()
         cur.close()
         conn.close()
@@ -180,6 +188,7 @@ def get_items():
 @app.route('/setup_data/<ID_situ>', methods=['GET'])
 def setup_data(ID_situ):
     global checklist, topic, score, topic_request, selection_situ,checklist_status,id_user,count,matched_topics
+
     count = 0
     matched_topics = {-1}
     selection_situ = ID_situ
@@ -199,6 +208,11 @@ def setup_data(ID_situ):
     temp.insert(1,fname_patient[0])
     temp.insert(2,lname_patient[0])
     checklist[3] = ''.join(temp)
+    topic_testing = [item['name_situ'] for item in name_patient][0]
+    image_data = [item['image'] for item in name_patient][0]
+    if isinstance(image_data, memoryview):
+        image_data = image_data.tobytes()  # Convert memoryview to bytes
+    image_testing = base64.b64encode(image_data).decode('utf-8')  # Convert bytes to base64 string
 
     std_name =  get_name_user(id_user)
     fname_user = [item['fname_user'] for item in std_name]
@@ -222,7 +236,11 @@ def setup_data(ID_situ):
     cur.close()
     conn.close()
 
-    return jsonify({"message": f"setup data with ID_situ = {ID_situ}"}), 200
+    return jsonify({
+        "message": f"setup data with ID_situ = {ID_situ}",
+        "topic": topic_testing,
+        "image": image_testing
+    }), 200
 
 def token_sentence(sentence,ID_situ):
     torch.cuda.empty_cache()
@@ -333,22 +351,82 @@ def model_scoring(split_sentences):
         print(check,":",checklist_status[i])
     print("Total Score:", count)
 
+def convert_to_wav(input_file, output_file="converted.wav"):
+    audio = AudioSegment.from_file(input_file)
+    audio = audio.set_channels(1).set_frame_rate(16000).set_sample_width(2)  # PCM 16-bit Mono
+    audio.export(output_file, format="wav")
+    return output_file
+
+def split_audio(audio, sr, max_length_sec=30):
+    max_samples = sr * max_length_sec
+    return [audio[i:i + max_samples] for i in range(0, len(audio), max_samples)]
+
+def ASR(file_path):
+    # Define model path
+    model_path = "./whisper-monsoon-t1"
+
+    # Load processor (tokenizer + feature extractor)
+    processor = WhisperProcessor.from_pretrained(model_path)
+
+    # Load model
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = WhisperForConditionalGeneration.from_pretrained(model_path).to(device)
+    
+    sr=16000
+    # Load audio file
+    audio_input, _ = librosa.load(file_path, sr=sr)  # Ensure 16kHz sample rate
+
+    # Split audio into chunks
+    audio_chunks = split_audio(audio_input, sr)
+    
+    transcriptions = []
+    
+    for chunk in audio_chunks:
+        # Process the chunk to match model input requirements, 
+        # include any generation parameters as needed (e.g., language)
+        input_features = processor(chunk, sampling_rate=sr, return_tensors="pt").input_features.to(device)
+        
+        # Generate token IDs using the model
+        with torch.no_grad():
+            predicted_ids = model.generate(input_features)
+        
+        # Decode token IDs to text, skipping any special tokens
+        transcription = processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
+        transcriptions.append(transcription)
+    
+    # Combine transcriptions from all chunks (add a separator if needed)
+    return "".join(transcriptions)
+    
 @app.route('/send_data', methods=['POST'])
 def send_data():
-    data = request.get_json()  # Get the incoming JSON data
-    text = data.get('text')
-    ID_situ = data.get('ID_situ')
-    ID_user = data.get('ID_user')
+    if 'audio' not in request.files:
+        return jsonify({"error": "No audio file provided"}), 400
 
-    split_sentences = token_sentence(text,ID_situ)
+    audio = request.files['audio']
+    file_name = audio.filename
+    file_path = os.path.join(UPLOAD_FOLDER, file_name)
+
+    # Save the uploaded audio file
+    audio.save(file_path)
+
+    wav_file = convert_to_wav(file_path)
+
+    # Process the uploaded audio file with ASR
+    transcription = ASR(wav_file)
+    print(transcription)
+    
+    ID_situ = request.form.get('ID_situ')
+    ID_user = request.form.get('ID_user')
+
+
+    split_sentences = token_sentence(transcription,ID_situ)
     model_scoring(split_sentences)
 
     print(f"Received name: {split_sentences}, ID_situ: {ID_situ}, ID_user: {ID_user}")
 
-    # Process the data here as needed
-    # For example, store the data in a database or take some other action
+    # Save data into database
 
-    return jsonify({"message": "Data received successfully!"}), 200
+    return jsonify({"message": transcription}), 200
 
 @app.route('/submit_testing', methods=['GET'])
 def submit_testing():
