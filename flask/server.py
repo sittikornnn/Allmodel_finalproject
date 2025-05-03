@@ -8,11 +8,12 @@ import torch
 from pythainlp.tokenize import word_tokenize
 from sentence_transformers import SentenceTransformer, util
 from datetime import datetime
+import base64
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
 
-id_user = 0
+id_user = 64015
 
 selection_situ = 1
 checklist = []
@@ -48,7 +49,7 @@ def get_data(selection_situ):
 def get_name_patient(selection_situ):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT fname_patient,lname_patient FROM situation s where s."ID_situ"=%s',(selection_situ,))
+    cursor.execute('SELECT * FROM situation s where s."ID_situ"=%s',(selection_situ,))
     processing = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -168,7 +169,7 @@ def get_items():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute('SELECT "ID_situ", name_situ FROM situation')
+        cur.execute('SELECT "ID_situ", name_situ FROM situation ORDER BY "ID_situ" ASC')
         items = cur.fetchall()
         cur.close()
         conn.close()
@@ -180,6 +181,7 @@ def get_items():
 @app.route('/setup_data/<ID_situ>', methods=['GET'])
 def setup_data(ID_situ):
     global checklist, topic, score, topic_request, selection_situ,checklist_status,id_user,count,matched_topics
+
     count = 0
     matched_topics = {-1}
     selection_situ = ID_situ
@@ -199,6 +201,11 @@ def setup_data(ID_situ):
     temp.insert(1,fname_patient[0])
     temp.insert(2,lname_patient[0])
     checklist[3] = ''.join(temp)
+    topic_testing = [item['name_situ'] for item in name_patient][0]
+    image_data = [item['image'] for item in name_patient][0]
+    if isinstance(image_data, memoryview):
+        image_data = image_data.tobytes()  # Convert memoryview to bytes
+    image_testing = base64.b64encode(image_data).decode('utf-8')  # Convert bytes to base64 string
 
     std_name =  get_name_user(id_user)
     fname_user = [item['fname_user'] for item in std_name]
@@ -222,7 +229,11 @@ def setup_data(ID_situ):
     cur.close()
     conn.close()
 
-    return jsonify({"message": f"setup data with ID_situ = {ID_situ}"}), 200
+    return jsonify({
+        "message": f"setup data with ID_situ = {ID_situ}",
+        "topic": topic_testing,
+        "image": image_testing
+    }), 200
 
 def token_sentence(sentence,ID_situ):
     torch.cuda.empty_cache()
