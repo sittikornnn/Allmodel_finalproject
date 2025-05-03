@@ -1,4 +1,5 @@
 'use client';
+
 import { Play, Square, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useRef, useEffect } from "react";
@@ -11,15 +12,15 @@ export default function Home() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const [reply, setReply] = useState(true);
-  const searchParams = useSearchParams();
-  const ID_situ = searchParams.get("ID_situ");
-  const [ID_user, setID_user] = useState<string | null>(null);
   const [countSent, setCountSent] = useState(0);
   const [topic, setTopic] = useState("Welcome to MyApp");
   const [image, setImage] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const ID_situ = searchParams.get("ID_situ");
+  const [ID_user, setID_user] = useState<string | null>(null);
   const router = useRouter();
 
-  // Fetch user ID (Commented for now)
+  // Fetch user ID
   useEffect(() => {
     fetch('http://localhost:5001/check_auth', {
       credentials: 'include',
@@ -36,7 +37,7 @@ export default function Home() {
       });
   }, []);
 
-  // Fetch topic and image based on situation ID
+  // Fetch topic and image
   useEffect(() => {
     const fetchData = async () => {
       if (ID_situ) {
@@ -56,9 +57,9 @@ export default function Home() {
     };
 
     fetchData();
-  }, [ID_situ, ID_user]);
+  }, [ID_situ]);
 
-  // Handle submit button click
+  // Handle exam submission
   const handleSubmit = async () => {
     if (countSent <= 0) {
       alert('You must send data at least once before submitting!');
@@ -83,20 +84,22 @@ export default function Home() {
     }
   };
 
-  // Upload audio to API
+  // Upload audio
   const sendAudioToAPI = async (audioBlob: Blob) => {
     const formData = new FormData();
     formData.append('audio', audioBlob, 'recording.wav');
+    formData.append('ID_situ', ID_situ || '');
+    formData.append('ID_user', ID_user || '');
 
     try {
-      const response = await fetch('http://127.0.0.1:5001/upload-audio', {
+      const response = await fetch('http://localhost:5001/send_data', {
         method: 'POST',
-        body: formData,
+        body: formData
       });
 
       if (response.ok) {
         const data = await response.json();
-        console.log(data.transcription);
+        console.log(data.message);
         setReply(true);
         setCountSent((prev) => prev + 1);
       } else {
@@ -107,7 +110,7 @@ export default function Home() {
     }
   };
 
-  // Toggle microphone state
+  // Microphone toggle logic
   const toggleMicrophone = async () => {
     if (!microphone) {
       try {
@@ -116,6 +119,8 @@ export default function Home() {
 
         const mediaRecorder = new MediaRecorder(stream);
         mediaRecorderRef.current = mediaRecorder;
+
+        audioChunksRef.current = [];
 
         mediaRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) {
@@ -137,8 +142,7 @@ export default function Home() {
       }
     } else {
       mediaRecorderRef.current?.stop();
-      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
-      mediaStreamRef.current = null;
+      mediaStreamRef.current?.getTracks().forEach(track => track.stop());
       setMicrophone(false);
       setReply(false);
       console.log('Microphone stopped.');
@@ -148,43 +152,43 @@ export default function Home() {
   return (
     <>
       <Navbar />
-      <div className="flex flex-col items-center justify-center min-h-screen space-y-4">
+      <div className="flex flex-col items-center justify-center min-h-screen px-4 py-8 space-y-6">
         {/* Title and Submit Button */}
-        <div className="relative w-full flex justify-center items-center px-4 gap-6">
+        <div className="w-full max-w-2xl flex justify-between items-center">
           <h1 className="text-2xl font-bold">{topic}</h1>
           <Button
             variant="destructive"
             onClick={handleSubmit}
-            className="rounded-lg bg-green-500 hover:bg-green-600 text-white"
+            className="bg-green-500 hover:bg-green-600 text-white rounded-lg"
           >
-            <span>Submit</span>
+            Submit
           </Button>
         </div>
 
-        {/* Show image from database */}
+        {/* Image Preview */}
         {image && (
           <img
             src={`data:image/jpeg;base64,${image}`}
-            alt="Detection"
-            className="w-full max-w-2xl mx-auto rounded shadow-md"
+            alt="Situation"
+            className="w-full max-w-2xl rounded shadow-md"
           />
         )}
 
-        {/* Microphone Toggle and Status */}
+        {/* Microphone Controls */}
         {reply ? (
-          <>
-            {microphone && <p className="text-red-500">🎤 Microphone is ON</p>}
+          <div className="flex flex-col items-center space-y-3">
+            {microphone && <p className="text-red-500 font-medium">🎤 Microphone is ON</p>}
             <Button
               variant="outline"
               onClick={toggleMicrophone}
-              className="flex items-center space-x-2 px-4 py-2 rounded-lg"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg"
             >
               {microphone ? <Square className="w-5 h-5" /> : <Play className="w-5 h-5" />}
               <span>{microphone ? "Stop" : "Start"}</span>
             </Button>
-          </>
+          </div>
         ) : (
-          <Button disabled className="flex items-center space-x-2">
+          <Button disabled className="flex items-center gap-2">
             <Loader2 className="animate-spin w-5 h-5" />
             <span>Please wait</span>
           </Button>
