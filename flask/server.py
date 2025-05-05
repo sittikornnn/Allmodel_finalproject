@@ -13,6 +13,10 @@ from pydub import AudioSegment
 from transformers import WhisperForConditionalGeneration, WhisperProcessor
 import librosa
 import base64
+from transformers import VitsTokenizer, VitsModel, set_seed
+import sounddevice as sd
+from scipy.io.wavfile import read
+import scipy
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
@@ -33,6 +37,8 @@ matched_topics = {-1} # Track matched topics to avoid duplicate scoring
 checklist_status = [] # Track whether each checklist item is matched
 all_miss = dict()
 count = 0
+questions = []
+normalAnswer = []
 
 # Connect to PostgreSQL
 def get_db_connection():
@@ -56,7 +62,7 @@ def get_data(selection_situ):
 def get_name_patient(selection_situ):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT fname_patient,lname_patient,name_situ,image FROM situation s where s."ID_situ"=%s',(selection_situ,))
+    cursor.execute('SELECT * FROM situation s where s."ID_situ"=%s',(selection_situ,))
     processing = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -187,8 +193,9 @@ def get_items():
     
 @app.route('/setup_data/<ID_situ>', methods=['GET'])
 def setup_data(ID_situ):
-    global checklist, topic, score, topic_request, selection_situ,checklist_status,id_user,count,matched_topics
-
+    global checklist, topic, score, topic_request, selection_situ,checklist_status,id_user,count,matched_topics,normalAnswer,questions
+    normalAnswer = []
+    questions = []
     count = 0
     matched_topics = {-1}
     selection_situ = ID_situ
@@ -201,13 +208,13 @@ def setup_data(ID_situ):
     name_patient = get_name_patient(ID_situ)
     fname_patient = [item['fname_patient'] for item in name_patient]
     lname_patient = [item['lname_patient'] for item in name_patient]
-    temp = checklist[2].split('fname')
-    temp.insert(1,fname_patient[0])
-    checklist[2] = ''.join(temp)
-    temp = checklist[3].split('fullname')
-    temp.insert(1,fname_patient[0])
-    temp.insert(2,lname_patient[0])
-    checklist[3] = ''.join(temp)
+    p_fname = checklist[2].split('fname')
+    p_fname.insert(1,fname_patient[0])
+    checklist[2] = ''.join(p_fname)
+    p_full = checklist[3].split('fullname')
+    p_full.insert(1,fname_patient[0])
+    p_full.insert(2,lname_patient[0])
+    checklist[3] = ''.join(p_full)
     topic_testing = [item['name_situ'] for item in name_patient][0]
     image_data = [item['image'] for item in name_patient][0]
     if isinstance(image_data, memoryview):
@@ -221,6 +228,24 @@ def setup_data(ID_situ):
     checklist[0] = checklist[0]+fullname_std
 
     checklist_status = [False] * len(checklist)
+    
+    questions.append(checklist[1])
+    normalAnswer.append(fname_patient[0]+lname_patient[0])
+    questions.append(checklist[2])
+    normalAnswer.append(lname_patient[0])
+    yesno_gender_name = [item['repeat_name'] for item in name_patient]
+    questions.append(checklist[3])
+    normalAnswer.append(yesno_gender_name[0])
+    if checklist[4] == 'ผู้ป่วยมีประวัติแพ้ยาอะไรไหม':
+        questions.append(checklist[4])
+        allergy = [item['allergy'] for item in name_patient]
+        normalAnswer.append(allergy[0])
+    if checklist[5] == 'ผู้ป่วยแพ้ยามีอาการผื่นคันใช่ไหม':
+        questions.append(checklist[5])
+        allergy_des = [item['allergy_des'] for item in name_patient]
+        normalAnswer.append(allergy_des[0])
+    print(questions)
+    print(normalAnswer)
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -297,11 +322,44 @@ def token_sentence(sentence,ID_situ):
 
     return split_sentences
 
+def genAnswer(index):
+    global normalAnswer
+    return normalAnswer[index]
+
+def model_bird(text):
+    return text
+
+def TTS(response):
+    tokenizer = VitsTokenizer.from_pretrained("VIZINTZOR/MMS-TTS-THAI-MALEV2",cache_dir="./mms")
+    model = VitsModel.from_pretrained("VIZINTZOR/MMS-TTS-THAI-MALEV2",cache_dir="./mms")
+
+    inputs = tokenizer(text=response, return_tensors="pt")
+
+    set_seed(456)  # make deterministic
+
+    with torch.no_grad():
+        outputs = model(**inputs)
+
+    waveform = outputs.waveform[0]
+
+    # Convert PyTorch tensor to NumPy array
+    waveform_array = waveform.numpy()
+
+    scipy.io.wavfile.write("techno_output.wav", rate=model.config.sampling_rate, data=waveform_array)
+
+    # Read the .wav file
+    sample_rate, data = read("./techno_output.wav")
+
+    # Play the audio
+    sd.play(data, samplerate=sample_rate)
+    sd.wait()  # Wait until playback is finished
+
 def model_scoring(split_sentences):
-    global checklist,topic,topic_request,score,count,matched_topics
+    global checklist,topic,topic_request,score,count,matched_topics,checklist_status,questions
     torch.cuda.empty_cache()
     torch.cuda.ipc_collect()
 
+    old_state = checklist_status.copy()
     model = SentenceTransformer('trained_model')
 
     count += 0
@@ -330,14 +388,22 @@ def model_scoring(split_sentences):
                     if required_topic != -1 and required_topic not in matched_topics:
                         continue  # Skip if required topic was not mentioned first
 
-                    checklist_status[best_match_index] = True  # Mark as matched
-
                     # Add score only if the topic has not been counted before
                     if matched_topic not in matched_topics:
+                        checklist_status[best_match_index] = True  # Mark as matched
                         count = count + matched_score
                         matched_topics.add(matched_topic)
+                       
+                    if (matched_checklist_item in questions) and (int(doublecheck) == 1):
+                        print('work function genAns')
+                        index = questions.index(matched_checklist_item)
+                        ans = genAnswer(index)
+                        print(ans)
+                        TTS(ans)
 
-                    # if doublecheck > 0:
+    if old_state == checklist_status:
+        outofknow = model_bird(check)
+        print(outofknow)
                     #     recording.append({
                     #     "checklist_item": matched_checklist_item,
                     #     "matched_sentence": sent,
@@ -413,7 +479,6 @@ def send_data():
 
     # Process the uploaded audio file with ASR
     transcription = ASR(wav_file)
-    print(transcription)
     
     ID_situ = request.form.get('ID_situ')
     ID_user = request.form.get('ID_user')
