@@ -244,6 +244,10 @@ def setup_data(ID_situ):
         questions.append(checklist[5])
         allergy_des = [item['allergy_des'] for item in name_patient]
         normalAnswer.append(allergy_des[0])
+    if checklist[5] == 'ผู้ป่วยมีโรคประจำตัวอะไรไหม':
+        questions.append(checklist[5])
+        chronic = [item['chronic'] for item in name_patient]
+        normalAnswer.append(chronic[0])
     print(questions)
     print(normalAnswer)
 
