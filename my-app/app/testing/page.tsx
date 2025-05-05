@@ -57,7 +57,7 @@ export default function Home() {
     };
 
     fetchData();
-  }, [ID_situ]);
+  }, []);
 
   // Handle exam submission
   const handleSubmit = async () => {
