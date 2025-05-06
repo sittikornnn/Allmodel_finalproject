@@ -40,7 +40,7 @@ const LoginPage = () => {
         if (data.role === 'Student') {
           router.push('/numberTesting');
         } else if (data.role === 'Teacher') {
-          router.push('/register');
+          router.push('/about_user');
         } else {
           setError('Unknown user role');
         }

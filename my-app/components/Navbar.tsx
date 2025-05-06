@@ -74,12 +74,12 @@ export default function Navbar() {
           {role === 'Teacher' && (
             <>
               <NavigationMenuItem>
-                <Link href="/register" passHref>
-                  <Button variant="ghost" className="text-white">Register</Button>
+                <Link href="/about_user" passHref>
+                  <Button variant="ghost" className="text-white">User Managers</Button>
                 </Link>
               </NavigationMenuItem>
               <NavigationMenuItem>
-                <Link href="/check-score" passHref>
+                <Link href="/check_score" passHref>
                   <Button variant="ghost" className="text-white">Check Score</Button>
                 </Link>
               </NavigationMenuItem>
