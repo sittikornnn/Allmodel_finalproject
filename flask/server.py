@@ -44,7 +44,6 @@ normalAnswer = []
 get_id_checklist = []
 
 BASE_MODEL_ID = "biodatlab/whisper-th-medium-combined" # <-- *** แก้ไขให้ตรงกับ Base Model ของคุณ ***
-
 LORA_CHECKPOINT_PATH = "./ASR/checkpoint-100" # <-- *** แก้ไข Path นี้ให้ถูกต้อง ***
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -479,13 +478,16 @@ def model_scoring(split_sentences):
     checklit_embeddings = model.encode(checklist)
 
     # Iterate through split_sent and check for similarity
-    for doublecheck in range(0,2):
+    for doublecheck in range(2):
+        print(doublecheck)
+        print(type(doublecheck))
+        if doublecheck == 1:
+            print("doublecheck is 1")
+        else:
+            print("doublecheck is 0")
         for sent in split_sentences:
             sent_embedding = model.encode(sent)
             similarities = util.cos_sim(sent_embedding, checklit_embeddings)
-
-            # best_match_index = similarities[0].argmax().item()  # Get index of highest similarity
-            # best_score = similarities[0][best_match_index].item()
 
             for i, check in enumerate(checklist):
                 if similarities[0][i] > threshold:
@@ -504,16 +506,13 @@ def model_scoring(split_sentences):
                         checklist_status[best_match_index] = True  # Mark as matched
                         count = count + matched_score
                         matched_topics.add(matched_topic)
-
-                        print(matched_checklist_item in questions)
-                        print(int(doublecheck) == 0)
                        
-                        if (matched_checklist_item in questions) and (int(doublecheck) == 1):
-                            print('work function genAns')
-                            index = questions.index(matched_checklist_item)
-                            ans = genAnswer(index)
-                            print(ans)
-                            TTS(ans)
+                    if (matched_checklist_item in questions) and (doublecheck == 1) and checklist_status[best_match_index]:
+                        print('work function genAns')
+                        index = questions.index(matched_checklist_item)
+                        ans = genAnswer(index)
+                        print(ans)
+                        TTS(ans)
 
     # if old_state == checklist_status:
     #     outofknow = model_bird(check)
@@ -531,7 +530,7 @@ def convert_to_wav(input_file, output_file="converted.wav"):
     audio.export(output_file, format="wav")
     return output_file
 
-def split_audio(audio, sr, max_length_sec=30):
+def split_audio(audio, sr, max_length_sec=15):
     max_samples = sr * max_length_sec
     return [audio[i:i + max_samples] for i in range(0, len(audio), max_samples)]
 
@@ -602,17 +601,18 @@ def send_data():
     transcription = ASR(wav_file)
     
     ID_situ = request.form.get('ID_situ')
-    ID_user = request.form.get('ID_user')
-
+    
+    temp_state = checklist_status.copy()
 
     split_sentences = token_sentence(transcription,ID_situ)
     model_scoring(split_sentences)
 
-    print(get_id_checklist)
-    print(checklist_status)
+    new_checked_indices = [
+        i for i, (before, after) in enumerate(zip(temp_state, checklist_status)) if not before and after
+    ]
 
-    true_indices = [i for i, val in enumerate(checklist_status) if val]
-    check_system = [get_id_checklist[i] for i in true_indices]
+    check_system = [get_id_checklist[i] for i in new_checked_indices]
+
     if not check_system:
         check_system.append(447)
 
