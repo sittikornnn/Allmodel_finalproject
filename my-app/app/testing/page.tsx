@@ -15,12 +15,13 @@ export default function Home() {
   const [countSent, setCountSent] = useState(0);
   const [topic, setTopic] = useState("Welcome to MyApp");
   const [image, setImage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true); // ✅ Loading state
   const searchParams = useSearchParams();
   const ID_situ = searchParams.get("ID_situ");
   const [ID_user, setID_user] = useState<string | null>(null);
   const router = useRouter();
 
-  // Fetch user ID
+  // ✅ Fetch user ID
   useEffect(() => {
     fetch('http://localhost:5001/check_auth', {
       credentials: 'include',
@@ -37,7 +38,7 @@ export default function Home() {
       });
   }, []);
 
-  // Fetch topic and image
+  // ✅ Fetch topic and image
   useEffect(() => {
     const fetchData = async () => {
       if (ID_situ) {
@@ -52,14 +53,18 @@ export default function Home() {
           }
         } catch (err) {
           console.error("Error fetching setup data:", err);
+        } finally {
+          setLoading(false); // ✅ Stop loading when done
         }
+      } else {
+        setLoading(false);
       }
     };
 
     fetchData();
-  }, []);
+  }, [ID_situ]);
 
-  // Handle exam submission
+  // ✅ Submit exam
   const handleSubmit = async () => {
     if (countSent <= 0) {
       alert('You must send data at least once before submitting!');
@@ -84,7 +89,7 @@ export default function Home() {
     }
   };
 
-  // Upload audio
+  // ✅ Upload audio
   const sendAudioToAPI = async (audioBlob: Blob) => {
     const formData = new FormData();
     formData.append('audio', audioBlob, 'recording.wav');
@@ -110,7 +115,7 @@ export default function Home() {
     }
   };
 
-  // Microphone toggle logic
+  // ✅ Toggle microphone
   const toggleMicrophone = async () => {
     if (!microphone) {
       try {
@@ -149,6 +154,17 @@ export default function Home() {
     }
   };
 
+  // ✅ Show full screen loader until setup_data is ready
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
+        <Loader2 className="w-12 h-12 animate-spin text-blue-500 mb-4" />
+        <p className="text-lg text-gray-600 font-semibold">Loading your test setup...</p>
+      </div>
+    );
+  }
+
+  // ✅ Main UI after loading
   return (
     <>
       <Navbar />
