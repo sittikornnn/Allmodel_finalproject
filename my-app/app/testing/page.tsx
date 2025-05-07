@@ -20,7 +20,7 @@ export default function Home() {
   const ID_situ = searchParams.get("ID_situ");
   const [ID_user, setID_user] = useState<string | null>(null);
   const router = useRouter();
-
+  
   // ✅ Fetch user ID
   useEffect(() => {
     fetch('http://localhost:5001/check_auth', {
@@ -153,6 +153,20 @@ export default function Home() {
       console.log('Microphone stopped.');
     }
   };
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code === "Space") {
+        event.preventDefault(); // prevent page scroll
+        toggleMicrophone(); // toggle microphone on space bar
+      }
+    };
+  
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [microphone, toggleMicrophone]);
 
   // ✅ Show full screen loader until setup_data is ready
   if (loading) {
