@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -19,6 +19,8 @@ from scipy.io.wavfile import read
 import scipy
 from collections import defaultdict
 from peft import PeftModel
+import pandas as pd
+import io
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
@@ -869,6 +871,28 @@ def delete_user(user_id):
     cursor.close()
     conn.close()
     return jsonify({'message': 'User deleted'}), 200
+
+@app.route('/api/export_excel', methods=['POST'])
+def export_excel():
+    data = request.get_json().get('data', [])
+
+    if not data:
+        return {"error": "No data provided"}, 400
+
+    df = pd.DataFrame(data)
+
+    # Write Excel to memory buffer
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='History')
+    output.seek(0)
+
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name='history_data.xlsx',
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
     
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)
