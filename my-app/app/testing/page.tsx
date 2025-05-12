@@ -20,6 +20,8 @@ export default function Home() {
   const ID_situ = searchParams.get("ID_situ");
   const [ID_user, setID_user] = useState<string | null>(null);
   const router = useRouter();
+  const [message, setMessage] = useState<string | null>(null);
+  const [resSystem, setResSystem] = useState<string | null>(null);
   
   // ✅ Fetch user ID
   useEffect(() => {
@@ -105,6 +107,8 @@ export default function Home() {
       if (response.ok) {
         const data = await response.json();
         console.log(data.message);
+        setMessage(data.message);
+        setResSystem(data.res_system);
         setReply(true);
         setCountSent((prev) => prev + 1);
       } else {
@@ -223,6 +227,15 @@ export default function Home() {
             <span>Please wait</span>
           </Button>
         )}
+
+        {/* Server Message Box */}
+        {message && (
+          <div className="w-full max-w-2xl px-4 py-3 bg-blue-100 border border-blue-300 text-blue-800 rounded-lg shadow text-left whitespace-pre-line">
+            <p><strong>Student:</strong> {message}</p>
+            {resSystem && <p className="mt-2"><strong>System:</strong> {resSystem}</p>}
+          </div>
+        )}
+        
       </div>
     </>
   );
