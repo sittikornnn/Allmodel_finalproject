@@ -33,6 +33,7 @@ checklist = []
 topic = []
 score = []
 topic_request = []
+tag_topic = []
 threshold = 0.6
 recording = []
 matched_topics = {-1} # Track matched topics to avoid duplicate scoring
@@ -53,6 +54,9 @@ RECORD_SECONDS = 5
 
 processor = None
 model = None
+
+model_respone = None
+tokenizer_respone = None
 
 def try_load_model():
     global processor , model, DEVICE
@@ -99,6 +103,15 @@ def try_load_model():
         model = None
         print("="*30)
 
+def load_model_respone(gender):
+    global model_respone,tokenizer_respone
+    if gender == 0:
+        model_respone = AutoModelForCausalLM.from_pretrained("./LLM/Male")
+        tokenizer_respone = AutoTokenizer.from_pretrained("./LLM/Male")
+    else:
+        model_respone = AutoModelForCausalLM.from_pretrained("./LLM/Female")
+        tokenizer_respone = AutoTokenizer.from_pretrained("./LLM/Female")
+
 # Connect to PostgreSQL
 def get_db_connection():
     return psycopg2.connect(
@@ -112,7 +125,7 @@ def get_db_connection():
 def get_data(selection_situ):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT cl."ID_checklist",check_sent,score,prerequired,topic FROM "having" h,situation s,checklist cl where h."ID_situ" = s."ID_situ" and cl."ID_checklist" = h."ID_checklist" and s."ID_situ"=%s order by cl.topic,cl."ID_checklist"',(selection_situ,))
+    cursor.execute('SELECT cl."ID_checklist",check_sent,score,prerequired,topic,tag_topic FROM "having" h,situation s,checklist cl where h."ID_situ" = s."ID_situ" and cl."ID_checklist" = h."ID_checklist" and s."ID_situ"=%s order by cl.topic,cl."ID_checklist"',(selection_situ,))
     processing = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -252,7 +265,7 @@ def get_items():
     
 @app.route('/setup_data/<ID_situ>', methods=['GET'])
 def setup_data(ID_situ):
-    global checklist, topic, score, topic_request, selection_situ,checklist_status,id_user,count,matched_topics,normalAnswer,questions,get_id_checklist,gender
+    global checklist, topic, score, topic_request, selection_situ,checklist_status,id_user,count,matched_topics,normalAnswer,questions,get_id_checklist,gender,tag_topic
     normalAnswer = []
     questions = []
     get_id_checklist = []
@@ -265,6 +278,7 @@ def setup_data(ID_situ):
     topic = [item['topic'] for item in data]
     score = [item['score'] for item in data]
     topic_request = [item['prerequired'] for item in data]
+    tag_topic = [item['tag_topic'] for item in data]
 
     name_patient = get_name_patient(ID_situ)
     #ชาย = 0 หญิง 1
@@ -329,6 +343,7 @@ def setup_data(ID_situ):
     conn.close()
 
     try_load_model()
+    load_model_respone(gender[0])
 
     return jsonify({
         "message": f"setup data with ID_situ = {ID_situ}",
@@ -396,48 +411,24 @@ def genAnswer(index):
     return normalAnswer[index]
         
 def model_bird(text):
-    global gender
-    return text
-    # if gender == 0:
-    #     model = AutoModelForCausalLM.from_pretrained("./LLM/Male")
-    #     tokenizer = AutoTokenizer.from_pretrained("./LLM/Male")
+    global model_respone,tokenizer_respone
+    print(text)
+    pipe = pipeline(
+        "text-generation",
+        model=model_respone,
+        tokenizer=tokenizer_respone,
+        device_map="auto"
+    )
 
-    #     # สร้าง pipeline
-    #     pipe = pipeline(
-    #         "text-generation",
-    #         model=model,
-    #         tokenizer=tokenizer,
-    #         device_map="auto"
-    #     )
-
-    #     messages = [{"role": "user", "content": f"{text}"}]
-    #     outputs = pipe(messages, max_new_tokens=128)
-    #     response = outputs[0]["generated_text"][-1]
-    #     if isinstance(response, dict) and "content" in response:
-    #         return response["content"]
-    #     elif isinstance(response, dict):
-    #         return str(response.get("content", ""))
-    #     return str(response)
-    # else:
-    #     model = AutoModelForCausalLM.from_pretrained("./LLM/Female")
-    #     tokenizer = AutoTokenizer.from_pretrained("./LLM/Female")
-
-    #     # สร้าง pipeline
-    #     pipe = pipeline(
-    #         "text-generation",
-    #         model=model,
-    #         tokenizer=tokenizer,
-    #         device_map="auto"
-    #     )
-
-    #     messages = [{"role": "user", "content": f"{text}"}]
-    #     outputs = pipe(messages, max_new_tokens=128)
-    #     response = outputs[0]["generated_text"][-1]
-    #     if isinstance(response, dict) and "content" in response:
-    #         return response["content"]
-    #     elif isinstance(response, dict):
-    #         return str(response.get("content", ""))
-    #     return str(response)
+    messages = [{"role": "user", "content": f"{text}"}]
+    outputs = pipe(messages, max_new_tokens=128)
+    response = outputs[0]["generated_text"][-1]
+    if isinstance(response, dict) and "content" in response:
+        return response["content"]
+    elif isinstance(response, dict):
+        return str(response.get("content", ""))
+    return str(response)
+    
 
 def TTS(response):
     tokenizer = VitsTokenizer.from_pretrained("VIZINTZOR/MMS-TTS-THAI-MALEV2",cache_dir="./mms")
@@ -468,7 +459,7 @@ def model_scoring(split_sentences):
     global checklist,topic,topic_request,score,count,matched_topics,checklist_status,questions
     torch.cuda.empty_cache()
     torch.cuda.ipc_collect()
-
+    respone = ''
     old_state = checklist_status.copy()
     model = SentenceTransformer('trained_model')
 
@@ -510,19 +501,21 @@ def model_scoring(split_sentences):
                     if (matched_checklist_item in questions) and (doublecheck == 1) and checklist_status[best_match_index]:
                         print('work function genAns')
                         index = questions.index(matched_checklist_item)
-                        ans = genAnswer(index)
-                        print(ans)
-                        TTS(ans)
+                        respone = genAnswer(index)
+                        print(respone)
+                        TTS(respone)
 
-    # if old_state == checklist_status:
-    #     outofknow = model_bird(check)
-    #     print(outofknow)
-    #     TTS(outofknow)
+    if old_state == checklist_status:
+        respone = model_bird(sent)
+        print(respone)
+        TTS(respone)
 
     print("Checklist Status:")
     for i,check in enumerate(checklist):
         print(check,":",checklist_status[i])
     print("Total Score:", count)
+
+    return respone
 
 def convert_to_wav(input_file, output_file="converted.wav"):
     audio = AudioSegment.from_file(input_file)
@@ -605,7 +598,7 @@ def send_data():
     temp_state = checklist_status.copy()
 
     split_sentences = token_sentence(transcription,ID_situ)
-    model_scoring(split_sentences)
+    respone_system = model_scoring(split_sentences)
 
     new_checked_indices = [
         i for i, (before, after) in enumerate(zip(temp_state, checklist_status)) if not before and after
@@ -648,17 +641,17 @@ def send_data():
         cur.close()
         conn.close()
 
-    return jsonify({"message": transcription}), 200
+    return jsonify({"message": transcription,"res_system":respone_system}), 200
 
 @app.route('/submit_testing', methods=['GET'])
 def submit_testing():
-    global checklist, topic_request, score, count, checklist_status,all_miss
+    global checklist, topic_request, score, count, checklist_status,all_miss,tag_topic
     miss_text = []
     find_drug = []
     name_drug = []
 
     for i, clst in enumerate(checklist_status):
-        if (not clst) and score[i] == 0:
+        if (not clst) and (score[i] == 0 or tag_topic[i] == 4):
             print(checklist[i], topic_request[i])
             miss_text.append(checklist[i])
             find_drug.append(topic_request[i])
