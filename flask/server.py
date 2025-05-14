@@ -47,7 +47,7 @@ normalAnswer = []
 get_id_checklist = []
 
 BASE_MODEL_ID = "biodatlab/whisper-th-medium-combined" # <-- *** แก้ไขให้ตรงกับ Base Model ของคุณ ***
-LORA_CHECKPOINT_PATH = "./ASR/checkpoint-100" # <-- *** แก้ไข Path นี้ให้ถูกต้อง ***
+LORA_CHECKPOINT_PATH = "./ASR_2/checkpoint-300" # <-- *** แก้ไข Path นี้ให้ถูกต้อง ***
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 TORCH_DTYPE = torch.float16 if torch.cuda.is_available() else torch.float32
@@ -327,6 +327,12 @@ def setup_data(ID_situ):
         questions.append(checklist[5])
         chronic = [item['chronic'] for item in name_patient]
         normalAnswer.append(chronic[0])
+
+    for check in checklist[6:]:
+        if check == 'คนไข้มีโรคประจำอะไรไหม':
+            questions.append(check)
+            chronic = [item['chronic'] for item in name_patient]
+            normalAnswer.append(chronic[0])
     print(questions)
     print(normalAnswer)
 
@@ -600,6 +606,7 @@ def send_data():
     temp_state = checklist_status.copy()
 
     split_sentences = token_sentence(transcription,ID_situ)
+    print(split_sentences)
     respone_system = model_scoring(split_sentences)
 
     new_checked_indices = [
@@ -748,9 +755,9 @@ def get_check_history():
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
         query = """
-            SELECT rt."ID_test",u."ID_user",fname_user,lname_user,name_situ,date_test,score_test FROM users u,result_test rt,situation s
+            SELECT rt."ID_test",u."ID_user",fname_user,lname_user,name_situ,date_test,score_test,check_state FROM users u,result_test rt,situation s
             where rt."ID_situ" = s."ID_situ" and u."ID_user" = rt."ID_user"
-            ORDER BY "date_test" desc
+            ORDER BY "date_test" desc 
         """
         cur.execute(query,)
         rows = cur.fetchall()
@@ -893,6 +900,41 @@ def export_excel():
         download_name='history_data.xlsx',
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
+
+@app.route('/api/update_history/<int:id_test>', methods=['POST'])
+def update_history(id_test):
+    data = request.get_json()
+    scoring = data.get('scoring')
+    check_state = data.get('check_state')
+
+    if not scoring or not check_state:
+        return jsonify({'message': 'Invalid input data'}), 400
+
+    print(id_test)
+    print(scoring)  # ตรวจสอบค่า scoring ที่รับเข้ามา
+    print(check_state)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # อัพเดตค่าลงในฐานข้อมูล
+        cursor.execute('''
+            UPDATE public.result_test
+            SET score_test = %s, check_state = %s
+            WHERE "ID_test" = %s;
+        ''', (scoring[0], check_state, id_test))
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()  # ถ้ามีข้อผิดพลาด ให้ยกเลิกการเปลี่ยนแปลง
+        print(f"Error updating history: {e}")
+        return jsonify({'message': 'Error updating history'}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+    return jsonify({'message': 'Success'}), 200
     
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)
