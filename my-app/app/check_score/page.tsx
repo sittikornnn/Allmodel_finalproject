@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Input } from "@/components/ui/input";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import Navbar from '@/components/Navbar';
-import { Info, Download } from 'lucide-react';
+import { Info, Download, CheckCircle, XCircle } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { useRouter } from 'next/navigation';
 
@@ -16,6 +16,7 @@ interface HistoryItem {
     name_situ: string;
     date_test: string;
     score_test: number;
+    check_state: boolean;
 }
 
 export default function HistoryPage() {
@@ -47,7 +48,7 @@ export default function HistoryPage() {
 
     // Handle "See More" click
     const handleSeeMore = (item: HistoryItem) => {
-        router.push(`/des_testing?ID_test=${item.ID_test}`);
+        router.push(`/des_testing?ID_test=${item.ID_test}&check_state=${item.check_state}&totalScore=${item.score_test}`);
     };
 
     // Handle Export to Excel
@@ -105,6 +106,7 @@ export default function HistoryPage() {
                                 <TableHead>Situation</TableHead>
                                 <TableHead>Date</TableHead>
                                 <TableHead>Score</TableHead>
+                                <TableHead>Check State</TableHead>
                                 <TableHead>Actions</TableHead>
                             </TableRow>
                         </TableHeader>
@@ -119,6 +121,13 @@ export default function HistoryPage() {
                                     <TableCell>{row.date_test}</TableCell>
                                     <TableCell>
                                         <span className="font-bold text-sm">{row.score_test}</span>
+                                    </TableCell>
+                                    <TableCell>
+                                        {row.check_state ? (
+                                            <CheckCircle className="text-green-500 w-5 h-5" />
+                                        ) : (
+                                            <XCircle className="text-red-500 w-5 h-5" />
+                                        )}
                                     </TableCell>
                                     <TableCell>
                                         <Button
