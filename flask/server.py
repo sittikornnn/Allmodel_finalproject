@@ -333,6 +333,10 @@ def setup_data(ID_situ):
             questions.append(check)
             chronic = [item['chronic'] for item in name_patient]
             normalAnswer.append(chronic[0])
+        if check == 'คนไข้แพ้ยาอะไรไหม':
+            questions.append(check)
+            allergy = [item['allergy'] for item in name_patient]
+            normalAnswer.append(allergy[0])
     print(questions)
     print(normalAnswer)
 
