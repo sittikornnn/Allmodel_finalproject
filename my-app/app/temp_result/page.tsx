@@ -72,7 +72,7 @@ export default function Result() {
         <h1 className="text-2xl font-bold">Result Page</h1>
         <p className="text-lg font-semibold">Your Score: {score}</p>
 
-        <div className="w-full max-w-2xl bg-gray-100 p-4 rounded-lg shadow-md">
+        {/* <div className="w-full max-w-2xl bg-gray-100 p-4 rounded-lg shadow-md">
           <h2 className="text-xl font-semibold mb-2">
             รายการที่ลืมพูดหรือพูดผิดพลาด:
           </h2>
@@ -85,10 +85,10 @@ export default function Result() {
               </li>
             ))}
           </ul>
-        </div>
+        </div> */}
 
         <div className="w-full max-w-2xl bg-yellow-100 p-4 rounded-lg shadow-md">
-          <h2 className="text-xl font-semibold mb-2">สรุปสิ่งที่ลืมพูด:</h2>
+          <h2 className="text-xl font-semibold mb-2">รายการที่ลืมพูดหรือพูดผิดพลาด:</h2>
           <ul className="list-disc list-inside space-y-1">
             {summary.map((line, idx) => (
               <li key={idx}>{line}</li>
